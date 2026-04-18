@@ -53,10 +53,11 @@
     let internals, mod_name, parsed_code, results;
     let shipInput = $("#ship-input");
     let shipSelect = $("#ship-select");
+    let treeSelect = $("#tree-select");
 
     let target = $("#results");
-    let loadTree = function() {
-        mod_name = $("#tree-select").val();
+    let loadTree = function(value, init = false) {
+        mod_name = value || treeSelect.val();
         let link;
         switch (mod_name) {
             case "mcst_t7_ver":
@@ -65,6 +66,7 @@
                 break;
             case "strawberry":
             case "vanilla":
+            case "kest":
                 link = "https://raw.githubusercontent.com/pmgl/starblast-modding/master";
                 break;
             default:
@@ -72,9 +74,18 @@
         }
         link += "/mods/" + mod_name + ".js";
         if (mod_name) {
+            showResults("Loading ship tree...");
+            if (!init) {
+                let newURL = new URL(location.href);
+                newURL.searchParams.set("query", shipInput.val());
+                newURL.searchParams.set("mod", mod_name);
+
+                newURL = newURL.toString();
+                window.history.pushState({ path: newURL }, '', newURL);
+            }
             $.get(link).then(function(mod_code) {
                 let game = { custom: {} }
-                for (let i of["addAlien", "addAsteroid", "addCollectible", "setObject", "setCustomMap", "setUIComponent", "removeObject"]) game[i] = function() {}
+                for (let i of ["addAlien", "addAsteroid", "addCollectible", "setObject", "setCustomMap", "setUIComponent", "removeObject"]) game[i] = function() {}
                 Function("game", mod_code).call(game, game);
 
                 let default_specs = [
@@ -117,7 +128,7 @@
                     nexts: new Map(game.options.reset_tree ? [] : default_specs.filter(s => s[2]).map(i => [i[0], i[2]])),
                     names: new Map(game.options.reset_tree ? [] : default_specs.map(i => [i[0], i[1]])),
                     models: new Map(),
-                    levels: new Map()
+                    levels: new Map(game.options.reset_tree ? [] : default_specs.map(i => [i[0], { level: Math.trunc(i[0] / 100), model: i[0] % 100 }]))
                 }
                 game.custom.ships = default_options;
                 internals = game.custom.ships;
@@ -132,7 +143,7 @@
                             internals.ships[level].push(code);
                             internals.names.set(code, prs.name.replace(/_/g, " "));
                             internals.levels.set(code, { level: prs.level, model: prs.model });
-                            if (prs.typespec.model !== code % 100) internals.models.set(code, prs.typespec.model);
+                            if (prs.typespec.model !== (code % 100)) internals.models.set(code, prs.typespec.model);
                             let cnxt = uAr(Array.isArray(next) ? next : []);
                             if (cnxt.length > 0) internals.nexts.set(code, cnxt)
                         } catch (e) {
@@ -161,8 +172,9 @@
 
                 filter();
 
-                showResults("Ship tree successfully loaded.");
-            }).catch(function(e) { showError("Failed to get ship tree info") })
+                if (shipInput.val()) findPath(init);
+                else showResults("Ship tree successfully loaded.");
+            }).catch(function(e) { showError("Failed to get ship tree info"); })
         }
     }
 
@@ -173,12 +185,20 @@
         for (let e of a) $(e).css("display", e.id.indexOf(filter) > -1 || (e.textContent || e.innerText).toUpperCase().replace(/[^0-9A-Z]/gi, " ").indexOf(filter) > -1 ? "" : "none")
     }
 
-    let findPath = function() {
+    let findPath = function(init = false) {
         let ship_name = shipInput.val();
         if (!ship_name || !mod_name) {
             if (!mod_name) showError("Please choose a ship tree to lookup");
             else showError("Please enter a ship to lookup")
         } else {
+            if (!init) {
+                let newURL = new URL(location.href);
+                newURL.searchParams.set("query", ship_name || "");
+                newURL.searchParams.set("mod", mod_name || "");
+
+                newURL = newURL.toString();
+                window.history.pushState({ path: newURL }, '', newURL);
+            }
             results = [];
 
             parsed_code = [...internals.names.entries()].find(entry => entry[1].toLowerCase() === ship_name.toLowerCase());
@@ -230,7 +250,7 @@
     }).reduce((a, b) => (a[b[0]] = b[1], a), {});
 
     if (queries.hidetitle == "true") $("#title").remove();
-    $("#tree-select").on("change", loadTree);
+    treeSelect.on("change", () => loadTree());
 
     shipInput.on("focus", function() {
         if (shipSelect.children().length > 0) {
@@ -241,7 +261,7 @@
 
     let shipChoose = $("#ship-choose");
 
-    for (let event of["click", "focus"]) {
+    for (let event of ["click", "focus"]) {
         $(document).on(event, "*", function(e) {
             e.stopPropagation();
             let display = ($.contains(shipChoose[0], e.target) && (e.type !== "click" || !$.contains(shipSelect[0], e.target))) ? "" : "none";
@@ -253,13 +273,26 @@
         });
     }
 
-    for (let event of["propertychange", "input"]) {
+    for (let event of ["propertychange", "input"]) {
         shipInput.on(event, filter);
     }
     shipChoose.on("keydown", focusControl);
-    $("#lookup").on("click", findPath);
+    $("#lookup").on("click", () => findPath());
     $(window).on("keydown", function(event) {
-        if (event.ctrlKey && event.keyCode == 13) findPath();
+        if ((event.ctrlKey || event.metaKey) && event.keyCode == 13) findPath();
     });
     addToolPage(null, "1%", "1%", null);
+
+    let search = new URL(location.href).searchParams;
+
+    if (search.has("mod")) {
+        let mod_name = search.get("mod").toLowerCase();
+        let available_values = [...treeSelect[0].options].slice(1).map(e => e.value);
+        if (available_values.includes(mod_name)) {
+            treeSelect.val(mod_name);
+            let hasQuery = search.has("query");
+            if (hasQuery) shipInput.val(search.get("query"));
+            loadTree(mod_name, true);
+        }
+    }
 })();
