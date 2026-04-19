@@ -27,22 +27,39 @@ window.t = (function(){
     map: $("#map")[0],
     sizeInput: $("#map_size"),
     gridIndex: 3,
-    getOptimalGridIndex: function (size) {
-      if (size <= 40) return 4;
-      if (size <= 60) return 3;
-      if (size <= 80) return 2.5;
-      if (size <= 120) return 2;
-      if (size <= 160) return 1.5;
-      return 1;
+    getOptimalGridIndex: function (size, zoomScale) {
+      let baseIndex = 3;
+      let numericSize = Number(size);
+      let resolvedZoomScale = Number(zoomScale);
+
+      if (!isFinite(resolvedZoomScale) || resolvedZoomScale <= 0) {
+        resolvedZoomScale = (StarblastMap.Engine && StarblastMap.Engine.zoom) ? Number(StarblastMap.Engine.zoom.scale) : 1;
+      }
+      if (!isFinite(resolvedZoomScale) || resolvedZoomScale <= 0) {
+        resolvedZoomScale = 1;
+      }
+
+      let zoomAdjustedIndex = baseIndex / Math.max(0.25, Math.min(resolvedZoomScale, 2));
+
+      if (isFinite(numericSize) && numericSize > 0) {
+        if (numericSize >= 400) zoomAdjustedIndex -= 1;
+        else if (numericSize >= 200) zoomAdjustedIndex -= 0.5;
+      }
+
+      return Math.max(0.5, Math.min(Math.round(zoomAdjustedIndex * 2) / 2, baseIndex));
     },
     border: {
       color: "",
       hide: true,
+      alpha: 1,
       check: function (origin,self_trigger) {
         let u = StarblastMap.Engine.setCheckbox(origin,"border-show","borderHide","");
         this.hide = u;
         let text = (u?"Show":"Hide")+" the map border";
         $("#border-show-ind").prop("class","fas fa-fw fa-border-"+(u?"none":"all"));
+        if ($("#grid-toggle-mark")[0]) {
+          $("#grid-toggle-mark").prop("class","fas fa-fw fa-"+(u?"times":"check"));
+        }
         $("#border-show1")[0].onmouseover = function(){StarblastMap.Engine.info.view(null,text,"Ctrl(Cmd) + B")};
         (!self_trigger) && StarblastMap.Engine.info.view(null,text,"Ctrl(Cmd) + B");
         (!origin) && StarblastMap.Engine.applyColor("border-color");
@@ -205,14 +222,37 @@ window.t = (function(){
           if (StarblastMap.Engine.Trail.state != -1) this.lastVisited = [x,y];
         }
       },
-      get: function (pos) {
+      get: function (pos, isY = false) {
         let canvas = StarblastMap.map;
-        let displaySize = canvas.clientWidth;
-        let internalSize = canvas.width;
-        let scaledPos = pos * (internalSize / displaySize);
-        let currentGridIndex = StarblastMap.gridIndex || StarblastMap.getOptimalGridIndex(StarblastMap.size);
+        let displaySize = isY ? canvas.clientHeight : canvas.clientWidth;
+        let internalSize = isY ? canvas.height : canvas.width;
+        
+        let zoom = StarblastMap.Engine.zoom || { scale: 1, panX: 0, panY: 0 };
+        
+        let container = zoom.container ? zoom.container[0] : null;
+        let containerSize = container ? (isY ? container.clientHeight : container.clientWidth) : displaySize;
+        
+        let centeredPos = pos - (containerSize / 2);
+        let zoomedPos = centeredPos / zoom.scale;
+        let pannedPos = zoomedPos - (isY ? zoom.panY : zoom.panX);
+        let canvasPos = pannedPos + (displaySize / 2);
+        let scaledPos = canvasPos * (internalSize / displaySize);
+        
+        let currentGridIndex = StarblastMap.gridIndex || StarblastMap.getOptimalGridIndex(StarblastMap.size, zoom.scale);
         return Math.max(Math.min(Math.floor((scaledPos - currentGridIndex) / currentGridIndex / 10), StarblastMap.size - 1), 0);
+      },
+      getFromClient: function(clientX, clientY) {
+        let rect = StarblastMap.map.getBoundingClientRect();
+        if (!rect.width || !rect.height) return { x: 0, y: 0 };
 
+        let gridIndex = StarblastMap.gridIndex || 1;
+        let scaledX = (clientX - rect.left) * (StarblastMap.map.width / rect.width);
+        let scaledY = (clientY - rect.top) * (StarblastMap.map.height / rect.height);
+
+        let x = Math.max(Math.min(Math.floor((scaledX - gridIndex) / gridIndex / 10), StarblastMap.size - 1), 0);
+        let y = Math.max(Math.min(Math.floor((scaledY - gridIndex) / gridIndex / 10), StarblastMap.size - 1), 0);
+
+        return { x: x, y: y };
       }
     },
     session: new Map(),
@@ -220,6 +260,106 @@ window.t = (function(){
     history: [],
     future: [],
     pattern: new Map(),
+    minimapRefreshFrame: null,
+    scheduleMinimapRefresh: function () {
+      if (this.minimapRefreshFrame != null) return;
+      this.minimapRefreshFrame = window.requestAnimationFrame(function() {
+        StarblastMap.minimapRefreshFrame = null;
+        StarblastMap.minimap.refresh();
+      });
+    },
+    minimap: {
+      canvas: $("#minimap")[0],
+      stats: $("#minimapStats"),
+      refresh: function() {
+        if (!this.canvas || !StarblastMap.map) return;
+        let c2d = this.canvas.getContext("2d");
+        if (!c2d) return;
+
+        let w = this.canvas.clientWidth || 140;
+        let h = this.canvas.clientHeight || 140;
+        if (this.canvas.width !== w || this.canvas.height !== h) {
+          this.canvas.width = w;
+          this.canvas.height = h;
+        }
+
+        c2d.clearRect(0, 0, w, h);
+        c2d.fillStyle = "#071024";
+        c2d.fillRect(0, 0, w, h);
+
+        c2d.drawImage(StarblastMap.map, 0, 0, w, h);
+
+        let zoom = StarblastMap.Engine.zoom;
+        if (!zoom) return;
+
+        let zb = zoom.getZoomBounds();
+        let scaleRel = Math.max(1, zoom.scale / zb.minScale);
+        let viewW = Math.min(1, 1 / scaleRel);
+        let viewH = Math.min(1, 1 / scaleRel);
+
+        let pb = zoom.getPanBounds();
+        let cx = 0.5;
+        let cy = 0.5;
+        if (pb.maxPanX > 0) cx = 0.5 - (zoom.panX / (2 * pb.maxPanX)) * (1 - viewW);
+        if (pb.maxPanY > 0) cy = 0.5 - (zoom.panY / (2 * pb.maxPanY)) * (1 - viewH);
+
+        let vx = (cx - viewW / 2) * w;
+        let vy = (cy - viewH / 2) * h;
+        let vw = viewW * w;
+        let vh = viewH * h;
+
+        if (this.stats && this.stats.length) {
+          let mapSize = StarblastMap.size || 0;
+          let centerX = Math.max(0, Math.min(mapSize, cx * mapSize));
+          let centerY = Math.max(0, Math.min(mapSize, cy * mapSize));
+          let regionW = Math.max(0, Math.min(mapSize, viewW * mapSize));
+          let regionH = Math.max(0, Math.min(mapSize, viewH * mapSize));
+          this.stats.html(`<div>C: ${centerX.toFixed(1)}, ${centerY.toFixed(1)}</div><div>S: ${regionW.toFixed(1)} x ${regionH.toFixed(1)}</div>`);
+        }
+
+        c2d.strokeStyle = "rgba(90,255,150,0.95)";
+        c2d.lineWidth = 2;
+        c2d.strokeRect(vx, vy, vw, vh);
+
+        c2d.save();
+
+        c2d.lineWidth = 1;
+
+        // Center lines (green) are always visible on minimap.
+        c2d.strokeStyle = "rgba(84, 255, 194, 0.78)";
+        c2d.beginPath();
+        c2d.moveTo(0, h / 2);
+        c2d.lineTo(w, h / 2);
+        c2d.moveTo(w / 2, 0);
+        c2d.lineTo(w / 2, h);
+        c2d.stroke();
+
+        // Mirror/diagonal aids (red) follow active mirror settings.
+        c2d.strokeStyle = "rgba(255, 102, 102, 0.85)";
+        c2d.beginPath();
+        // Horizontal mirror reflects across the y-axis (vertical line).
+        if (StarblastMap.Engine.Mirror.h) {
+          c2d.moveTo(w / 2, 0);
+          c2d.lineTo(w / 2, h);
+        }
+        // Vertical mirror reflects across the x-axis (horizontal line).
+        if (StarblastMap.Engine.Mirror.v) {
+          c2d.moveTo(0, h / 2);
+          c2d.lineTo(w, h / 2);
+        }
+        if (StarblastMap.Engine.Mirror.d1) {
+          c2d.moveTo(0, h);
+          c2d.lineTo(w, 0);
+        }
+        if (StarblastMap.Engine.Mirror.d2) {
+          c2d.moveTo(0, 0);
+          c2d.lineTo(w, h);
+        }
+        c2d.stroke();
+
+        c2d.restore();
+      }
+    },
     size: Math.min(Math.max(20,Number(localData.getItem("size"))||20),200),
     buildData: function(dms) {
       (!dms) && this.pushSession("history",["n",this.data]);
@@ -332,11 +472,15 @@ window.t = (function(){
           let c2d = this.map.getContext('2d');
           c2d.clearRect(0,0,this.map.width, this.map.height);
 
-          this.gridIndex = StarblastMap.getOptimalGridIndex(this.size);
+          let currentZoom = StarblastMap.Engine.zoom ? StarblastMap.Engine.zoom.scale : 1;
+          this.gridIndex = StarblastMap.getOptimalGridIndex(this.size, currentZoom);
 
           this.map.width = (this.size*5+1)*2*this.gridIndex;
           this.map.height = (this.size*5+1)*2*this.gridIndex;
 
+          // Canvas state resets on resize; keep sprite edges crisp.
+          c2d = this.map.getContext('2d');
+          c2d.imageSmoothingEnabled = false;
           // c2d.imageSmoothingEnabled = false;
           // c2d.webkitImageSmoothingEnabled = false;
           // c2d.mozImageSmoothingEnabled = false;
@@ -361,6 +505,9 @@ window.t = (function(){
           c2d.stroke();
           StarblastMap.Engine.applyColor("border-color");
           StarblastMap.Engine.applyColor("as-color");
+          if (StarblastMap.Engine.zoom && typeof StarblastMap.Engine.zoom.resetZoom == "function") {
+            StarblastMap.Engine.zoom.resetZoom();
+          }
           (!dismiss_history) && this.pushSession("history",["n",prev]);
         }
         else
@@ -749,6 +896,7 @@ window.t = (function(){
     },
     sync: function () {
       localData.setItem("map",JSON.stringify(this.data));
+      this.scheduleMinimapRefresh();
     },
     undo: function() {
       if (!this.history.length) return;
@@ -809,15 +957,50 @@ window.t = (function(){
             let gridIndex = StarblastMap.gridIndex;
             let drawX = (x*10+1) * gridIndex, drawY = (y*10+1) * gridIndex;
             let maxSize = 9 * gridIndex;
-            c2d.clearRect(drawY, drawX , maxSize, maxSize);
-            c2d.beginPath();
-            let asteroidSize = gridIndex * num;
-            let drawMargin = (maxSize - asteroidSize) / 2;
-            c2d.drawImage(this.template, drawY + drawMargin, drawX + drawMargin, asteroidSize, asteroidSize);
-            c2d.fillStyle = this.color;
-            c2d.globalCompositeOperation = "source-atop";
-            c2d.fillRect(drawY, drawX, maxSize, maxSize);
+            let clearPad = Math.max(1, Math.ceil(gridIndex * 0.75));
+
+            c2d.save();
+            c2d.globalAlpha = 1;
             c2d.globalCompositeOperation = "source-over";
+            c2d.imageSmoothingEnabled = false;
+            c2d.clearRect(drawY - clearPad, drawX - clearPad, maxSize + clearPad * 2, maxSize + clearPad * 2);
+
+            if (num > 0) {
+              c2d.beginPath();
+              let asteroidSize = gridIndex * num;
+              let drawMargin = Math.round((maxSize - asteroidSize) / 2);
+              c2d.drawImage(this.template, drawY + drawMargin, drawX + drawMargin, asteroidSize, asteroidSize);
+              c2d.fillStyle = this.color;
+              c2d.globalCompositeOperation = "source-atop";
+              c2d.fillRect(drawY, drawX, maxSize, maxSize);
+              c2d.globalCompositeOperation = "source-over";
+            }
+            c2d.restore();
+
+            // Use the old clear-strip border redraw strategy to keep grid edges intact.
+            if (!StarblastMap.border.hide && !init) {
+              let currentZoom = StarblastMap.Engine.zoom ? StarblastMap.Engine.zoom.scale : 1;
+              let lineWidth = Math.max(1, Math.round((gridIndex / Math.max(currentZoom, 1)) * 0.5));
+              let left = Math.round((y * 10 + 0.5) * gridIndex) + 0.5;
+              let right = Math.round(((y + 1) * 10 + 0.5) * gridIndex) + 0.5;
+              let top = Math.round((x * 10 + 0.5) * gridIndex) + 0.5;
+              let bottom = Math.round(((x + 1) * 10 + 0.5) * gridIndex) + 0.5;
+
+              c2d.save();
+              c2d.beginPath();
+              c2d.strokeStyle = StarblastMap.border.color || (localData.getItem("border-color") || "#6e87b5");
+              c2d.lineWidth = lineWidth;
+              c2d.globalAlpha = StarblastMap.border.alpha;
+
+              StarblastMap.Engine.addBorder(c2d, left, top, right, top, lineWidth);
+              StarblastMap.Engine.addBorder(c2d, right, top, right, bottom, lineWidth);
+              StarblastMap.Engine.addBorder(c2d, left, bottom, right, bottom, lineWidth);
+              StarblastMap.Engine.addBorder(c2d, left, top, left, bottom, lineWidth);
+
+              c2d.stroke();
+              c2d.restore();
+            }
+
             if (num == 0) StarblastMap.pattern.delete(`${x}-${y}`);
             else StarblastMap.pattern.set(`${x}-${y}`,num);
             StarblastMap.data[x][y]=num;
@@ -1021,16 +1204,34 @@ window.t = (function(){
             break;
           case "border-color":
             let c2d = StarblastMap.map.getContext('2d'), size = StarblastMap.size;
-            let gridIndex = StarblastMap.gridIndex;
+            let currentZoom = StarblastMap.Engine.zoom ? StarblastMap.Engine.zoom.scale : 1;
+            let gridIndex = StarblastMap.getOptimalGridIndex(size, currentZoom);
+            c2d.clearRect(0, 0, StarblastMap.map.width, StarblastMap.map.height);
+
+            for (let i of [...StarblastMap.pattern]) {
+              let pos = i[0].split("-").map(x => Number(x));
+              StarblastMap.Asteroids.modify(pos[0], pos[1], i[1], true);
+            }
+
             c2d.beginPath();
             c2d.strokeStyle = css;
-            c2d.lineWidth = 1/2 * gridIndex;
+            c2d.lineWidth = Math.max(1, Math.round((gridIndex / Math.max(currentZoom, 1)) * 0.5));
+            c2d.globalAlpha = StarblastMap.border.alpha;
             for (let i=0;i<=size;i++)
             {
-              this.addBorder(c2d,(i*10+1/2)*gridIndex,1/2*gridIndex,(i*10+1/2)*gridIndex,(size*10+1/2)*gridIndex, c2d.lineWidth);
-              this.addBorder(c2d,1/2*gridIndex,(i*10+1/2)*gridIndex,(size*10+1/2)*gridIndex,(i*10+1/2)*gridIndex, c2d.lineWidth);
+              let x = Math.round((i*10+1/2)*gridIndex) + 0.5;
+              let y = Math.round((i*10+1/2)*gridIndex) + 0.5;
+              let start = Math.round((1/2)*gridIndex) + 0.5;
+              let end = Math.round((size*10+1/2)*gridIndex) + 0.5;
+              if (!StarblastMap.border.hide) {
+                c2d.moveTo(x, start);
+                c2d.lineTo(x, end);
+                c2d.moveTo(start, y);
+                c2d.lineTo(end, y);
+              }
             }
             c2d.stroke();
+            c2d.globalAlpha = 1;
             root.setProperty('--border-color', css);
             StarblastMap.border.color = css;
             break;
@@ -1149,6 +1350,9 @@ window.t = (function(){
           this[p] = u;
           $("#almr").css("display","none");
           $("#mrmark-"+p).prop("class", "fas fa-fw fa-" + (u ? "check" : "times"));
+          if (StarblastMap.visibilityAids && typeof StarblastMap.visibilityAids.refresh == "function") {
+            StarblastMap.visibilityAids.refresh();
+          }
         },
         v:false,
         h:false,
@@ -1309,7 +1513,13 @@ window.t = (function(){
           ["shiftY", null, "Set custom Y shift value"],
           ["rAllowReplace", null, "Toggle new map to be overwritten over old map, otherwise overlapped"],
           ["importFromClipboard", null, "Import new map from your clipboard", "Ctrl(Cmd) + V"],
-          ["clear-local-data", "Clear local data", "Clears your local data and sets all to default"]
+          ["clear-local-data", "Clear local data", "Clears your local data and sets all to default"],
+          ["gridToggle", "Grid", "Show or hide grid lines", "G"],
+          ["aidsToggle", "Visibility Aids", "Toggle center and mirror guide lines", "V"],
+          ["zoomIn", "Zoom In", "Zoom in to see more detail of the map", "+"],
+          ["zoomOut", "Zoom Out", "Zoom out to see more of the map", "-"],
+          ["zoomReset", "Reset Zoom", "Reset zoom and pan to default view", "\\"],
+          ["map", "Pan", "Pan map with Arrow keys when zoomed in", "Arrow keys"]
         ],
         view: function (title,text,HotKey) {
           $("#info").html(`<strong>${StarblastMap.Engine.encodeHTML(title||"")}${(title&&text)?": ":""}</strong>${StarblastMap.Engine.encodeHTML(text||"")}${HotKey?(" (HotKey "+HotKey+")"):""}`);
@@ -1318,6 +1528,7 @@ window.t = (function(){
     }
   }
   StarblastMap.Engine.info.list.unshift(...StarblastMap.Engine.menu.modules.map((i,j) => ["menu"+j,null,i+" Tab"]));
+  
   bindIDMapper(StarblastMap);
   StarblastMap.IDMapper.StarblastMap = StarblastMap;
   StarblastMap.Import.StarblastMap = StarblastMap;
@@ -1412,13 +1623,13 @@ window.t = (function(){
     $("#MirrorOptions").append(mr.map(i => `<input type="checkbox" style="display:none" id="mirror-${i}">`).join("")+"<div class='button-grid' id='mirrorChoose'>"+mr.map((i,j) => {
       let content;
       switch(i) {
-        case "h": content = `<i class="fas fa-fw fa-arrows-alt-h"></i>`; break;
-        case "v": content = `<i class="fas fa-fw fa-arrows-alt-v"></i>`; break;
-        case "d1": content = `<span style="font-family: monospace; font-size: 1.2em; font-weight: bold;">\\</span>`; break;
-        case "d2": content = `<span style="font-family: monospace; font-size: 1.2em; font-weight: bold;">/</span>`; break;
+        case "h": content = `<span class='mirror-label'>H</span>`; break;
+        case "v": content = `<span class='mirror-label'>V</span>`; break;
+        case "d1": content = `<span class='mirror-label'>D1</span>`; break;
+        case "d2": content = `<span class='mirror-label'>D2</span>`; break;
       }
-      return `<button id="mr-${i}" style="position: relative; display: flex; align-items: center; justify-content: center;">${content}<i class="fas fa-fw fa-times" id="mrmark-${i}" style="position: absolute; bottom: 2px; right: 2px; font-size: 0.7em;"></i></button>`;
-    }).join("")+`<button id="almr"><i class="fas fa-fw fa-expand-arrows-alt"></i></button></div>`);
+      return `<button id="mr-${i}" style="position: relative; display: flex; align-items: center; justify-content: center;" title="${mdesc[j]} mirror">${content}<i class="fas fa-fw fa-times" id="mrmark-${i}" style="position: absolute; bottom: 2px; right: 2px; font-size: 0.7em;"></i></button>`;
+    }).join("")+`<button id="almr" title="all mirror modes enabled"><span class='mirror-label'>ALL</span></button></div>`);
     for (let i of mr)
     {
       StarblastMap.Engine.Mirror.apply(!0,i);
@@ -1430,7 +1641,8 @@ window.t = (function(){
   StarblastMap.Asteroids.applyKey("min",localData.getItem("ASSize_min"));
   StarblastMap.Asteroids.applyKey("max",localData.getItem("ASSize_max"));
   StarblastMap.map.addEventListener("mousemove", function(e){
-    this.view(this.get(e.offsetX, true),this.get(e.offsetY, false), true);
+    let pos = this.getFromClient(e.clientX, e.clientY);
+    this.view(pos.x, pos.y, true);
   }.bind(StarblastMap.Coordinates));
   StarblastMap.map.addEventListener("touchmove", function(e){
     if (!StarblastMap.Engine.touchHover) {
@@ -1444,13 +1656,15 @@ window.t = (function(){
     }
     let u;
     for (let i of e.touches) {
-      this.view(this.get(i.pageX-StarblastMap.Engine.menu.left),this.get(i.pageY-StarblastMap.Engine.menu.top),u);
+      let pos = this.getFromClient(i.clientX, i.clientY);
+      this.view(pos.x, pos.y,u);
       if (!u) u = true;
     }
   }.bind(StarblastMap.Coordinates));
   StarblastMap.map.addEventListener("mouseover",function(){(!StarblastMap.Engine.touchHover) && StarblastMap.info()()});
   StarblastMap.map.addEventListener("mousedown", function(e){
-    StarblastMap.Engine.Trail.start(StarblastMap.Coordinates.get(e.offsetX),StarblastMap.Coordinates.get(e.offsetY),e);
+    let pos = StarblastMap.Coordinates.getFromClient(e.clientX, e.clientY);
+    StarblastMap.Engine.Trail.start(pos.x, pos.y, e);
   });
   StarblastMap.map.addEventListener("touchstart", function(e){
     this.info(!0)();
@@ -1462,7 +1676,8 @@ window.t = (function(){
     for (let i of e.touches) {
       i.id = this.Engine.touchID++;
       this.Engine.touches.set(i.id, i);
-      this.Engine.Trail.start(this.Coordinates.get(i.pageX-this.Engine.menu.left, true),this.Coordinates.get(i.pageY-this.Engine.menu.top, false), {button: 0});
+      let pos = this.Coordinates.getFromClient(i.clientX, i.clientY);
+      this.Engine.Trail.start(pos.x, pos.y, {button: 0});
     }
   }.bind(StarblastMap));
   try {
@@ -1604,6 +1819,45 @@ window.t = (function(){
         }
         else switch (e.which)
         {
+          case 187:
+          case 107:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.zoomIn();
+            break;
+          case 189:
+          case 109:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.zoomOut();
+            break;
+          case 220:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.resetZoom();
+            break;
+          case 71:
+            e.preventDefault();
+            $("#border-show").prop("checked",!$("#border-show").is(":checked"));
+            StarblastMap.border.check(null,true);
+            break;
+          case 86:
+            e.preventDefault();
+            if (StarblastMap.visibilityAids) StarblastMap.visibilityAids.toggle();
+            break;
+          case 37:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.panBy(-1, 0);
+            break;
+          case 38:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.panBy(0, -1);
+            break;
+          case 39:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.panBy(1, 0);
+            break;
+          case 40:
+            e.preventDefault();
+            StarblastMap.Engine.zoom.panBy(0, 1);
+            break;
           case 119:
           case 87:
             scrollBy(0,-40);
@@ -1701,6 +1955,299 @@ window.t = (function(){
     });
   }
 
+  StarblastMap.Engine.zoom = {
+    scale: 1,
+    minScale: 1,
+    maxScale: 30,
+    zoomFactor: 1.25,
+    maxCellSize: 28,
+    panKeyStep: 32,
+    panX: 0,
+    panY: 0,
+    container: $("#mapContainer"),
+    wrapper: $("#mapWrapper"),
+    bgImage: $("#mapBgI"),
+    persistTimer: null,
+    
+    init: function() {
+      this.scale = parseFloat(localData.getItem("zoom-scale")) || 1;
+      this.panX = parseFloat(localData.getItem("zoom-panX")) || 0;
+      this.panY = parseFloat(localData.getItem("zoom-panY")) || 0;
+      this.applyTransform();
+      this.setupWheelPan();
+    },
+
+    getZoomBounds: function() {
+      // The map is fit to page at scale 1 due to container/canvas layout rules.
+      let minScale = this.minScale;
+      let baseCellSize = this.getBaseCellScreenSize();
+      let maxByCell = baseCellSize > 0 ? (this.maxCellSize / baseCellSize) : this.maxScale;
+      let maxScale = Math.max(minScale, Math.min(this.maxScale, maxByCell));
+      return { minScale: minScale, maxScale: maxScale };
+    },
+
+    clampScale: function() {
+      let bounds = this.getZoomBounds();
+      this.scale = Math.max(bounds.minScale, Math.min(this.scale, bounds.maxScale));
+    },
+    
+    applyTransform: function() {
+      this.clampScale();
+      this.constrainPan();
+      
+      let transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
+      this.wrapper.css("transform", transform);
+      this.bgImage.css("transform", transform);
+      
+      this.updateGrid();
+      StarblastMap.scheduleMinimapRefresh();
+      this.persistState();
+    },
+
+    persistState: function() {
+      if (this.persistTimer) clearTimeout(this.persistTimer);
+      this.persistTimer = setTimeout(function() {
+        localData.setItem("zoom-scale", StarblastMap.Engine.zoom.scale);
+        localData.setItem("zoom-panX", StarblastMap.Engine.zoom.panX);
+        localData.setItem("zoom-panY", StarblastMap.Engine.zoom.panY);
+        StarblastMap.Engine.zoom.persistTimer = null;
+      }, 120);
+    },
+    
+    updateGrid: function() {
+      let newGridIndex = StarblastMap.getOptimalGridIndex(StarblastMap.size, this.scale);
+      if (Math.abs(StarblastMap.gridIndex - newGridIndex) > 0.1) {
+        StarblastMap.gridIndex = newGridIndex;
+        StarblastMap.map.width = (StarblastMap.size*5+1)*2*StarblastMap.gridIndex;
+        StarblastMap.map.height = (StarblastMap.size*5+1)*2*StarblastMap.gridIndex;
+
+        let c2d = StarblastMap.map.getContext('2d');
+        c2d.imageSmoothingEnabled = false;
+        
+        for (let i of [...StarblastMap.pattern]) {
+          let pos = i[0].split("-").map(x => Number(x));
+          StarblastMap.Asteroids.modify(pos[0], pos[1], i[1], true);
+        }
+        
+        StarblastMap.Engine.applyColor("border-color");
+      }
+    },
+
+    getBaseCellScreenSize: function() {
+      let containerEl = this.container && this.container[0];
+      if (!containerEl) return 1;
+
+      let rect = containerEl.getBoundingClientRect();
+      let containerSize = Math.min(rect.width, rect.height);
+      if (!containerSize) return 1;
+
+      let mapWidth = StarblastMap.map.width || 1;
+      let cellInternalSize = 10 * StarblastMap.gridIndex;
+      return (containerSize * cellInternalSize) / mapWidth;
+    },
+    
+    zoomIn: function() {
+      let bounds = this.getZoomBounds();
+      this.scale = Math.min(this.scale * this.zoomFactor, bounds.maxScale);
+      this.applyTransform();
+    },
+    
+    zoomOut: function() {
+      let bounds = this.getZoomBounds();
+      this.scale = Math.max(this.scale / this.zoomFactor, bounds.minScale);
+      this.applyTransform();
+    },
+    
+    resetZoom: function() {
+      this.scale = this.getZoomBounds().minScale;
+      this.panX = 0;
+      this.panY = 0;
+      this.applyTransform();
+    },
+
+    panBy: function(dirX, dirY) {
+      let bounds = this.getPanBounds();
+      if (!bounds.canPanX && !bounds.canPanY) return;
+
+      let step = this.panKeyStep / Math.max(this.scale, this.getZoomBounds().minScale);
+      if (bounds.canPanX && dirX) this.panX -= dirX * step;
+      if (bounds.canPanY && dirY) this.panY -= dirY * step;
+      this.applyTransform();
+    },
+
+    getPanBounds: function() {
+      let containerEl = this.container && this.container[0];
+      if (!containerEl) return { canPanX: false, canPanY: false, maxPanX: 0, maxPanY: 0 };
+
+      let rect = containerEl.getBoundingClientRect();
+      let containerWidth = rect.width;
+      let containerHeight = rect.height;
+      let bounds = this.getZoomBounds();
+
+      if (!containerWidth || !containerHeight || this.scale <= bounds.minScale) {
+        return { canPanX: false, canPanY: false, maxPanX: 0, maxPanY: 0 };
+      }
+
+      // With transform translate(...) scale(...), pan remains in unscaled CSS pixel units.
+      let relativeScale = this.scale / bounds.minScale;
+      let maxPanX = Math.max(0, (containerWidth * (relativeScale - 1)) / 2);
+      let maxPanY = Math.max(0, (containerHeight * (relativeScale - 1)) / 2);
+
+      // Tighten bounds by accounting for internal map padding (half-grid border on each side).
+      let mapWidth = StarblastMap.map.width || 1;
+      let mapHeight = StarblastMap.map.height || 1;
+      let contentPadX = containerWidth * (0.5 * StarblastMap.gridIndex / mapWidth);
+      let contentPadY = containerHeight * (0.5 * StarblastMap.gridIndex / mapHeight);
+      maxPanX = Math.max(0, maxPanX - contentPadX);
+      maxPanY = Math.max(0, maxPanY - contentPadY);
+
+      return {
+        canPanX: maxPanX > 0,
+        canPanY: maxPanY > 0,
+        maxPanX: maxPanX,
+        maxPanY: maxPanY
+      };
+    },
+    
+    constrainPan: function() {
+      let bounds = this.getPanBounds();
+
+      this.panX = bounds.canPanX ? Math.max(Math.min(this.panX, bounds.maxPanX), -bounds.maxPanX) : 0;
+      this.panY = bounds.canPanY ? Math.max(Math.min(this.panY, bounds.maxPanY), -bounds.maxPanY) : 0;
+    },
+    
+    setupWheelPan: function() {
+      this.container[0].addEventListener("wheel", function(e) {
+        e.preventDefault();
+
+        let bounds = this.getPanBounds();
+        let canPanX = bounds.canPanX;
+        let canPanY = bounds.canPanY;
+        
+        if (!canPanX && !canPanY) {
+          this.panX = 0;
+          this.panY = 0;
+          this.applyTransform();
+          return;
+        }
+        
+        let panSpeed = Math.max(0.1, 0.1 / this.scale);
+        
+        let deltaX = 0, deltaY = 0;
+        
+        if (e.shiftKey) {
+          if (canPanX) deltaX = -e.deltaY * panSpeed;
+        } else {
+          if (canPanX) deltaX = -e.deltaX * panSpeed;
+          if (canPanY) deltaY = -e.deltaY * panSpeed;
+        }
+        
+        if (canPanX) {
+          this.panX = Math.max(Math.min(this.panX + deltaX, bounds.maxPanX), -bounds.maxPanX);
+        }
+        if (canPanY) {
+          this.panY = Math.max(Math.min(this.panY + deltaY, bounds.maxPanY), -bounds.maxPanY);
+        }
+        
+        this.applyTransform();
+      }.bind(this));
+    }
+  };
+  
+  StarblastMap.Engine.zoom.init();
+  StarblastMap.minimap.refresh();
+  
+  $("#zoomIn").on("click", function() {
+    StarblastMap.Engine.zoom.zoomIn();
+  });
+  
+  $("#zoomOut").on("click", function() {
+    StarblastMap.Engine.zoom.zoomOut();
+  });
+  
+  $("#zoomReset").on("click", function() {
+    StarblastMap.Engine.zoom.resetZoom();
+  });
+
+  let panHoldTimer = null;
+  let startPanHold = function(dx, dy) {
+    let pan = StarblastMap.Engine.zoom.panBy.bind(StarblastMap.Engine.zoom);
+    pan(dx, dy);
+    if (panHoldTimer) clearInterval(panHoldTimer);
+    panHoldTimer = setInterval(function() { pan(dx, dy); }, 16);
+  };
+
+  let stopPanHold = function() {
+    if (panHoldTimer) {
+      clearInterval(panHoldTimer);
+      panHoldTimer = null;
+    }
+  };
+
+  let bindPanButton = function(id, dx, dy) {
+    let el = $("#" + id)[0];
+    if (!el) return;
+    el.addEventListener("mousedown", function(e) { e.preventDefault(); startPanHold(dx, dy); });
+    el.addEventListener("touchstart", function(e) { e.preventDefault(); startPanHold(dx, dy); }, { passive: false });
+    el.addEventListener("mouseup", stopPanHold);
+    el.addEventListener("mouseleave", stopPanHold);
+    el.addEventListener("touchend", stopPanHold);
+    el.addEventListener("touchcancel", stopPanHold);
+  };
+
+  bindPanButton("panUp", 0, -1);
+  bindPanButton("panDown", 0, 1);
+  bindPanButton("panLeft", -1, 0);
+  bindPanButton("panRight", 1, 0);
+
+  $("#gridToggle").on("click", function() {
+    $("#border-show").prop("checked", !$("#border-show").is(":checked"));
+    StarblastMap.border.check(null, true);
+  });
+
+  StarblastMap.visibilityAids = {
+    enabled: false,
+    init: function() {
+      let saved = localData.getItem("visibility-aids");
+      this.enabled = (saved == null) ? true : (saved == "true");
+      if (saved == null) localData.setItem("visibility-aids", true);
+      this.refresh();
+    },
+    toggle: function() {
+      this.enabled = !this.enabled;
+      localData.setItem("visibility-aids", this.enabled);
+      this.refresh();
+    },
+    refresh: function() {
+      $("#visibilityAids").css("display", this.enabled ? "" : "none");
+      if ($("#aids-toggle-mark")[0]) {
+        $("#aids-toggle-mark").prop("class", "fas fa-fw fa-" + (this.enabled ? "check" : "times"));
+      }
+      // Horizontal mirror reflects across the y-axis (vertical line).
+      $("#aid-mirror-v").css("display", (this.enabled && StarblastMap.Engine.Mirror.h) ? "block" : "none");
+      // Vertical mirror reflects across the x-axis (horizontal line).
+      $("#aid-mirror-h").css("display", (this.enabled && StarblastMap.Engine.Mirror.v) ? "block" : "none");
+      $("#aid-d1").css("display", (this.enabled && StarblastMap.Engine.Mirror.d1) ? "block" : "none");
+      $("#aid-d2").css("display", (this.enabled && StarblastMap.Engine.Mirror.d2) ? "block" : "none");
+      $("#aid-center-h").css("display", this.enabled ? "block" : "none");
+      $("#aid-center-v").css("display", this.enabled ? "block" : "none");
+      if (StarblastMap.minimap) StarblastMap.minimap.refresh();
+    }
+  };
+
+  $("#aidsToggle").on("click", function() {
+    StarblastMap.visibilityAids.toggle();
+  });
+
+  StarblastMap.visibilityAids.init();
+  
+  for (let info of StarblastMap.Engine.info.list) {
+    if (["zoomIn", "zoomOut", "zoomReset", "gridToggle", "aidsToggle"].includes(info[0])) {
+      $("#"+info[0])[0].onmouseover = function(){
+        StarblastMap.Engine.info.view(info[1], info[2], info[3]);
+      };
+    }
+  }
   $("#info-popup-container").on("click", function(e) {
     e.stopPropagation();
     $("#info-popup").toggle();

@@ -50,7 +50,7 @@
     </div>
 
     <div id="menu"
-      style="height: 100%; min-width: 200px; max-width: 350px; display: flex; flex-direction: column; position: relative; border-radius: 8px 0 0 8px; z-index: 2;">
+      style="height: 100%; min-width: 200px; max-width: 350px; display: flex; flex-direction: column; position: relative; border-radius: 0; z-index: 2;">
       <div id="main" style="flex: 1; display: flex; flex-direction: row; height: 100%;">
         <div style="display: flex; flex-direction: row; width: 100%; height: 100%;">
           <div id="modules"
@@ -81,7 +81,7 @@
               <i class="fas fa-fw fa-info-circle" id="info-icon" style="font-size: 1.2em;"></i>
             </div>
             <div id="info-popup"
-              style="position: absolute; bottom: 0; left: 60px; background: var(--secondary-background); border: 1px solid var(--other-border-color); border-radius: 8px; padding: 12px; min-width: 280px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; z-index: 1001;">
+              style="position: absolute; bottom: 0; left: 60px; background: var(--secondary-background); border: 1px solid var(--other-border-color); border-radius: 0; padding: 12px; min-width: 280px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; z-index: 1001;">
               <div style="font-size: 0.9em; color: var(--text-color); line-height: 1.4;">
                 <div style="margin-bottom: 8px;">
                   <strong>Map Editor</strong><br>
@@ -221,7 +221,7 @@
                     <legend>Game Mode</legend>
                     <select id="game_mode" style="width: 100%; max-width: 200px;"></select>
                   </fieldset>
-                  <button id="IDMapperApply" style="align-self: flex-start;"><i class="fas fa-fw fa-check"></i></button>
+                  <button id="IDMapperApply" style="align-self: flex-start; width: auto; min-width: 72px; padding: 0 12px;">Apply</button>
                 </div>
               </fieldset>
             </div>
@@ -359,13 +359,58 @@
     </div>
     <div id="mapBox"
       style="flex: 1 1 auto; height: 100%; position: relative; display: flex; align-items: center; justify-content: center;">
-      <div
-        style="position: relative; width: min(100%, calc(100vmin - 40px)); aspect-ratio: 1/1;">
-        <img id="mapBgI" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: flex; align-items: center; justify-content: center;">
-        <div id="mapWrapper" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+      <div id="mapContainer"
+        style="position: relative; width: min(100%, calc(100vmin - 40px)); aspect-ratio: 1/1; overflow: hidden;">
+        <img id="mapBgI" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform-origin: center; transition: transform 0.2s ease;">
+        <div id="mapWrapper" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; transform-origin: center; transition: transform 0.2s ease;">
           <canvas id="map"
-            style="width: 100%; height: 100%; object-fit: contain; display: block;"></canvas>
+            style="width: 100%; height: 100%; display: block;"></canvas>
+          <div id="visibilityAids" style="position: absolute; inset: 0; pointer-events: none; display: none; z-index: 20;">
+            <div id="aid-center-h" class="aid-line aid-center-h"></div>
+            <div id="aid-center-v" class="aid-line aid-center-v"></div>
+            <div id="aid-mirror-h" class="aid-line aid-mirror-h"></div>
+            <div id="aid-mirror-v" class="aid-line aid-mirror-v"></div>
+            <div id="aid-d1" class="aid-line aid-diag aid-diag-1"></div>
+            <div id="aid-d2" class="aid-line aid-diag aid-diag-2"></div>
+          </div>
         </div>
+      </div>
+
+      <div id="minimapContainer" style="position: absolute; right: 20px; top: 18px; width: 140px; display: flex; flex-direction: column; z-index: 102;">
+        <canvas id="minimap" style="width: 100%; height: 140px; display: block; flex: 0 0 auto;"></canvas>
+        <div id="minimapStats" style="margin-top: 6px; text-align: center; font-size: 0.72rem; line-height: 1.25; white-space: nowrap; opacity: 0.92;"><div>C: 0.0, 0.0</div><div>S: 0.0 x 0.0</div></div>
+      </div>
+      
+      <div id="zoomControls" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100;">
+        <button id="zoomIn" class="zoom-control" title="Zoom In" aria-label="Zoom In">
+          <i class="fas fa-fw fa-plus"></i>
+        </button>
+        <button id="zoomOut" class="zoom-control" title="Zoom Out" aria-label="Zoom Out">
+          <i class="fas fa-fw fa-minus"></i>
+        </button>
+        <button id="zoomReset" class="zoom-control" title="Reset Zoom" aria-label="Reset Zoom">
+          <i class="fas fa-fw fa-compress-arrows-alt"></i>
+        </button>
+        <button id="gridToggle" class="zoom-control" title="Toggle Grid" aria-label="Toggle Grid">
+          <i class="fas fa-fw fa-border-all" id="grid-toggle-ind"></i>
+          <i class="fas fa-fw fa-times" id="grid-toggle-mark" style="position: absolute; bottom: 1px; right: 1px; font-size: 0.58em;"></i>
+        </button>
+        <button id="aidsToggle" class="zoom-control" title="Toggle Visibility Aids" aria-label="Toggle Visibility Aids">
+          <i class="fas fa-fw fa-crosshairs" id="aids-toggle-ind"></i>
+          <i class="fas fa-fw fa-times" id="aids-toggle-mark" style="position: absolute; bottom: 1px; right: 1px; font-size: 0.58em;"></i>
+        </button>
+      </div>
+
+      <div id="panJoystick" style="position: absolute; right: 20px; bottom: 56px; width: 116px; height: 116px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; z-index: 101;">
+        <div></div>
+        <button id="panUp" class="zoom-control" title="Pan Up" aria-label="Pan Up"><i class="fas fa-fw fa-chevron-up"></i></button>
+        <div></div>
+        <button id="panLeft" class="zoom-control" title="Pan Left" aria-label="Pan Left"><i class="fas fa-fw fa-chevron-left"></i></button>
+        <div></div>
+        <button id="panRight" class="zoom-control" title="Pan Right" aria-label="Pan Right"><i class="fas fa-fw fa-chevron-right"></i></button>
+        <div></div>
+        <button id="panDown" class="zoom-control" title="Pan Down" aria-label="Pan Down"><i class="fas fa-fw fa-chevron-down"></i></button>
+        <div></div>
       </div>
       <div id="footer"
         style="background-color: var(--secondary-background); position: fixed; bottom: 0; left: 0; right: 0; padding: 0.2vmax; display: flex; justify-content: space-between; align-items: center;">

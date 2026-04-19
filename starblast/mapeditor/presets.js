@@ -22,7 +22,7 @@ else (function(){
   console.log('%cMap Editor, made by Bhpsngum,\n\nfeel free to distribute the code and make sure to credit my name if you intend to do that\n\nGitHub: https://github.com/Bhpsngum', 'font-weight: bold; font-size: 15px;color: Black;');
   $("input, textarea").attr("spellcheck", false);
   $.ajax("/starblast/mapeditor/changelog.txt").then(function(data){
-    let versionMatch = data.match(/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
+    let versionMatch = data.match(/([0-9]+\.[0-9]+\.[0-9]+(?:\.[0-9]+)?)/);
     if (versionMatch) {
       let version = versionMatch[1];
       $("#version-info").text('Version ' + version);
