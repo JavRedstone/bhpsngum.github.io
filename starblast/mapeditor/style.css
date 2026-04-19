@@ -762,11 +762,11 @@ textarea:focus-visible,
 }
 
 #mapContainer {
-    cursor: grab;
+    cursor: default;
 }
 
 #mapContainer:active {
-    cursor: grabbing;
+    cursor: default;
 }
 
 #minimapContainer {
