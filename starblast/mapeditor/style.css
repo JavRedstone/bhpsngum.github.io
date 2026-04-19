@@ -597,11 +597,10 @@ textarea:focus-visible,
 #allowReplaceInd,
 #rInd,
 #bgI-global-ind,
-#bgI-allowExport-ind,
-#grid-toggle-mark {
+#bgI-allowExport-ind {
     font-size: 0.65em !important;
-    right: 1px !important;
-    bottom: 1px !important;
+    right: 2px !important;
+    bottom: 2px !important;
     width: 11px;
     height: 11px;
     display: inline-flex;
