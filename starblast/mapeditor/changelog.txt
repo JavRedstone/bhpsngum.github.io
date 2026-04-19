@@ -2,7 +2,7 @@
 Updated by JavRedstone
 * Added zooming and panning
 * Added minimap
-* Added visibility aid lines
+* Added visibility aid lines and grid toggle
 * Reduced UI clutter for a cleaner editor layout
 
 3.4.0/Aug 4, 2025
