@@ -29,14 +29,24 @@ window.t = (function(){
     gridIndex: 3,
     getOptimalGridIndex: function (size, zoomScale) {
       let baseIndex = 3;
-      
-      // zoomScale = zoomScale || (StarblastMap.Engine.zoom ? StarblastMap.Engine.zoom.scale : 1);
+      let numericSize = Number(size);
+      let resolvedZoomScale = Number(zoomScale);
 
-      // let zoomAdjustedIndex = Math.round(baseIndex / Math.max(0.25, Math.min(zoomScale, 2)));
+      if (!isFinite(resolvedZoomScale) || resolvedZoomScale <= 0) {
+        resolvedZoomScale = (StarblastMap.Engine && StarblastMap.Engine.zoom) ? Number(StarblastMap.Engine.zoom.scale) : 1;
+      }
+      if (!isFinite(resolvedZoomScale) || resolvedZoomScale <= 0) {
+        resolvedZoomScale = 1;
+      }
 
-      // return Math.max(0.5, Math.min(zoomAdjustedIndex, 3));
+      let zoomAdjustedIndex = baseIndex / Math.max(0.25, Math.min(resolvedZoomScale, 2));
 
-      return baseIndex;
+      if (isFinite(numericSize) && numericSize > 0) {
+        if (numericSize >= 400) zoomAdjustedIndex -= 1;
+        else if (numericSize >= 200) zoomAdjustedIndex -= 0.5;
+      }
+
+      return Math.max(0.5, Math.min(Math.round(zoomAdjustedIndex * 2) / 2, baseIndex));
     },
     border: {
       color: "",
@@ -51,9 +61,6 @@ window.t = (function(){
           $("#grid-toggle-mark").prop("class","fas fa-fw fa-"+(u?"times":"check"));
         }
         $("#border-show1")[0].onmouseover = function(){StarblastMap.Engine.info.view(null,text,"Ctrl(Cmd) + B")};
-        if ($("#gridToggle")[0]) {
-          $("#gridToggle")[0].onmouseover = function(){StarblastMap.Engine.info.view("Grid", text, "G")};
-        }
         (!self_trigger) && StarblastMap.Engine.info.view(null,text,"Ctrl(Cmd) + B");
         (!origin) && StarblastMap.Engine.applyColor("border-color");
       }
@@ -253,6 +260,14 @@ window.t = (function(){
     history: [],
     future: [],
     pattern: new Map(),
+    minimapRefreshFrame: null,
+    scheduleMinimapRefresh: function () {
+      if (this.minimapRefreshFrame != null) return;
+      this.minimapRefreshFrame = window.requestAnimationFrame(function() {
+        StarblastMap.minimapRefreshFrame = null;
+        StarblastMap.minimap.refresh();
+      });
+    },
     minimap: {
       canvas: $("#minimap")[0],
       stats: $("#minimapStats"),
@@ -881,7 +896,7 @@ window.t = (function(){
     },
     sync: function () {
       localData.setItem("map",JSON.stringify(this.data));
-      StarblastMap.minimap.refresh();
+      this.scheduleMinimapRefresh();
     },
     undo: function() {
       if (!this.history.length) return;
@@ -1952,6 +1967,7 @@ window.t = (function(){
     container: $("#mapContainer"),
     wrapper: $("#mapWrapper"),
     bgImage: $("#mapBgI"),
+    persistTimer: null,
     
     init: function() {
       this.scale = parseFloat(localData.getItem("zoom-scale")) || 1;
@@ -1979,16 +1995,23 @@ window.t = (function(){
       this.clampScale();
       this.constrainPan();
       
-      let transform = `scale(${this.scale}) translate(${this.panX}px, ${this.panY}px)`;
+      let transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
       this.wrapper.css("transform", transform);
       this.bgImage.css("transform", transform);
       
       this.updateGrid();
-      StarblastMap.minimap.refresh();
-      
-      localData.setItem("zoom-scale", this.scale);
-      localData.setItem("zoom-panX", this.panX);
-      localData.setItem("zoom-panY", this.panY);
+      StarblastMap.scheduleMinimapRefresh();
+      this.persistState();
+    },
+
+    persistState: function() {
+      if (this.persistTimer) clearTimeout(this.persistTimer);
+      this.persistTimer = setTimeout(function() {
+        localData.setItem("zoom-scale", StarblastMap.Engine.zoom.scale);
+        localData.setItem("zoom-panX", StarblastMap.Engine.zoom.panX);
+        localData.setItem("zoom-panY", StarblastMap.Engine.zoom.panY);
+        StarblastMap.Engine.zoom.persistTimer = null;
+      }, 120);
     },
     
     updateGrid: function() {
@@ -2065,10 +2088,10 @@ window.t = (function(){
         return { canPanX: false, canPanY: false, maxPanX: 0, maxPanY: 0 };
       }
 
-      // Pan happens in pre-scale units because transform is scale(...) translate(...).
+      // With transform translate(...) scale(...), pan remains in unscaled CSS pixel units.
       let relativeScale = this.scale / bounds.minScale;
-      let maxPanX = Math.max(0, (containerWidth * (relativeScale - 1)) / (2 * relativeScale));
-      let maxPanY = Math.max(0, (containerHeight * (relativeScale - 1)) / (2 * relativeScale));
+      let maxPanX = Math.max(0, (containerWidth * (relativeScale - 1)) / 2);
+      let maxPanY = Math.max(0, (containerHeight * (relativeScale - 1)) / 2);
 
       // Tighten bounds by accounting for internal map padding (half-grid border on each side).
       let mapWidth = StarblastMap.map.width || 1;

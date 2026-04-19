@@ -770,7 +770,6 @@ textarea:focus-visible,
 }
 
 #minimapContainer {
-    border: 1px solid var(--button-border-color);
     background: rgba(7, 12, 24, 0.78);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
@@ -805,6 +804,9 @@ textarea:focus-visible,
         right: 15px !important;
         top: 14px !important;
         width: 110px !important;
+    }
+
+    #minimap {
         height: 110px !important;
     }
 

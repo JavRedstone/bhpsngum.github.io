@@ -376,26 +376,26 @@
         </div>
       </div>
 
-      <div id="minimapContainer" style="position: absolute; right: 20px; top: 18px; width: 140px; height: 140px; z-index: 102;">
-        <canvas id="minimap" style="width: 100%; height: 100%; display: block;"></canvas>
+      <div id="minimapContainer" style="position: absolute; right: 20px; top: 18px; width: 140px; display: flex; flex-direction: column; z-index: 102;">
+        <canvas id="minimap" style="width: 100%; height: 140px; display: block; flex: 0 0 auto;"></canvas>
         <div id="minimapStats" style="margin-top: 6px; text-align: center; font-size: 0.72rem; line-height: 1.25; white-space: nowrap; opacity: 0.92;"><div>C: 0.0, 0.0</div><div>S: 0.0 x 0.0</div></div>
       </div>
       
       <div id="zoomControls" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100;">
-        <button id="zoomIn" class="zoom-control" title="Zoom In">
+        <button id="zoomIn" class="zoom-control" title="Zoom In" aria-label="Zoom In">
           <i class="fas fa-fw fa-plus"></i>
         </button>
-        <button id="zoomOut" class="zoom-control" title="Zoom Out">
+        <button id="zoomOut" class="zoom-control" title="Zoom Out" aria-label="Zoom Out">
           <i class="fas fa-fw fa-minus"></i>
         </button>
-        <button id="zoomReset" class="zoom-control" title="Reset Zoom">
+        <button id="zoomReset" class="zoom-control" title="Reset Zoom" aria-label="Reset Zoom">
           <i class="fas fa-fw fa-compress-arrows-alt"></i>
         </button>
-        <button id="gridToggle" class="zoom-control" title="Toggle Grid">
+        <button id="gridToggle" class="zoom-control" title="Toggle Grid" aria-label="Toggle Grid">
           <i class="fas fa-fw fa-border-all" id="grid-toggle-ind"></i>
           <i class="fas fa-fw fa-times" id="grid-toggle-mark" style="position: absolute; bottom: 1px; right: 1px; font-size: 0.58em;"></i>
         </button>
-        <button id="aidsToggle" class="zoom-control" title="Toggle Visibility Aids">
+        <button id="aidsToggle" class="zoom-control" title="Toggle Visibility Aids" aria-label="Toggle Visibility Aids">
           <i class="fas fa-fw fa-crosshairs" id="aids-toggle-ind"></i>
           <i class="fas fa-fw fa-times" id="aids-toggle-mark" style="position: absolute; bottom: 1px; right: 1px; font-size: 0.58em;"></i>
         </button>
@@ -403,13 +403,13 @@
 
       <div id="panJoystick" style="position: absolute; right: 20px; bottom: 56px; width: 116px; height: 116px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; z-index: 101;">
         <div></div>
-        <button id="panUp" class="zoom-control" title="Pan Up"><i class="fas fa-fw fa-chevron-up"></i></button>
+        <button id="panUp" class="zoom-control" title="Pan Up" aria-label="Pan Up"><i class="fas fa-fw fa-chevron-up"></i></button>
         <div></div>
-        <button id="panLeft" class="zoom-control" title="Pan Left"><i class="fas fa-fw fa-chevron-left"></i></button>
+        <button id="panLeft" class="zoom-control" title="Pan Left" aria-label="Pan Left"><i class="fas fa-fw fa-chevron-left"></i></button>
         <div></div>
-        <button id="panRight" class="zoom-control" title="Pan Right"><i class="fas fa-fw fa-chevron-right"></i></button>
+        <button id="panRight" class="zoom-control" title="Pan Right" aria-label="Pan Right"><i class="fas fa-fw fa-chevron-right"></i></button>
         <div></div>
-        <button id="panDown" class="zoom-control" title="Pan Down"><i class="fas fa-fw fa-chevron-down"></i></button>
+        <button id="panDown" class="zoom-control" title="Pan Down" aria-label="Pan Down"><i class="fas fa-fw fa-chevron-down"></i></button>
         <div></div>
       </div>
       <div id="footer"
